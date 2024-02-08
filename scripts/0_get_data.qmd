@@ -1,0 +1,143 @@
+---
+title: "0_get_data"
+author: "Łukasz Balerzak"
+date: '`r Sys.Date()`'
+format: 
+  html:
+    code-fold: true
+    embed-resources: true
+toc: true
+toc-depth: 4
+df-print: kable
+fig-cap-location: top
+execute: 
+  warning: false
+editor_options: 
+  chunk_output_type: inline
+
+---
+
+# Setup
+```{r setup}
+
+library(tidyverse)
+library(arrow)
+library(readxl)
+library(here)
+library(knitr)
+library(lubridate)
+library(janitor)
+library(curl)
+
+i_am('scripts/0_get_data.qmd')
+
+options(scipen = 999)   
+
+```
+
+# Download raw data
+Data downloaded from https://ela.nauka.gov.pl/pl/experts/source-data.
+
+```{r import-raw}
+
+urls = unique(
+  c(
+  "https://ela.nauka.gov.pl/dataExperts/doctors/doctors-institution-general-dictionary.xlsx",
+  "https://ela.nauka.gov.pl/dataExperts/graduates/graduates-major-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/graduates/graduates-institution-dictionary.xlsx",
+  "https://ela.nauka.gov.pl/dataExperts/graduates/graduates-institution-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/graduates/graduates-national-dictionary.xlsx",
+  "https://ela.nauka.gov.pl/dataExperts/graduates/graduates-national-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/doctors/doctors-institution-general-dictionary.xlsx",
+  "https://ela.nauka.gov.pl/dataExperts/doctors/doctors-institution-general-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/doctors/doctors-institution-discipline-dictionary.xlsx",
+  "https://ela.nauka.gov.pl/dataExperts/doctors/doctors-institution-discipline-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/doctors/doctors-national-general-dictionary.xlsx",
+  "https://ela.nauka.gov.pl/dataExperts/doctors/doctors-national-general-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/doctors/doctors-national-discipline-dictionary.xlsx",
+  "https://ela.nauka.gov.pl/dataExperts/doctors/doctors-national-discipline-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/phd_students/phd_students-institution-general-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/phd_students/phd_students-institution-discipline-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/phd_students/phd_students-national-general-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/phd_students/phd_students-national-discipline-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/students/students-major-dictionary.xlsx",
+  "https://ela.nauka.gov.pl/dataExperts/students/students-major-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/students/students-institution-dictionary.xlsx",
+  "https://ela.nauka.gov.pl/dataExperts/students/students-institution-data.csv",
+  "https://ela.nauka.gov.pl/dataExperts/students/students-national-dictionary.xlsx",
+  "https://ela.nauka.gov.pl/dataExperts/students/students-national-data.csv"
+))
+
+
+file_paths = paste0("data/raw/",today(),"-",basename(urls))
+
+# download files
+
+#walk2(urls, file_paths,\(u,p) download.file(u,here(p)))
+multi_download(urls=urls,destfiles = here(file_paths), resume=T)
+
+
+```
+
+
+Convert CSV files to Parquet as an excercise. Remove CSV files after.
+
+```{r csv-to-pq}
+#| eval: true
+
+
+# check size of files 
+tibble(
+  files=list.files(here("data/raw"),pattern = ".csv"),
+  size_MB = file.size(file.path(here("data/raw"),files))/1024^2
+) |>arrange(desc(size_MB))
+
+
+
+dictionairy_paths = file_paths[str_ends(file_paths,"dictionary.xlsx")]
+data_paths = file_paths[str_ends(file_paths,"data.csv")]
+file_names = str_sub(basename(data_paths),12,-5)
+
+big_files = data_paths[file.size(here(data_paths))/1024^2 >=20]
+
+
+# read csv |> read all as string() |> partition by 1st column (year)  |> save as parquet
+
+fn_csv_to_pq = function(pts) {
+       open_ds = open_delim_dataset(sources=here(pts),
+                                    delim = ";",
+                                    convert_options = csv_convert_options(decimal_point=","))
+       new_schema = schema(
+         map(names(open_ds),\(x) Field$create(name=x, type=string())))
+       
+       new_ds = open_delim_dataset(sources=here(pts),
+                                   delim = ";",
+                                   schema = new_schema,
+                                   convert_options = csv_convert_options(decimal_point=","))
+       
+       if (file.size(here(pts))/1024^2 >=20) {
+        new_ds|>
+        group_by(across(1)) |>
+        write_dataset(
+        here(paste0("data/raw/",str_sub(basename(pts),12,-5))),
+        format = "parquet")
+       } else {
+         new_ds|>
+        #group_by(across(1)) |>
+        write_dataset(
+        here(paste0("data/raw/",str_sub(basename(pts),12,-5))),
+        format = "parquet")
+       }
+}  
+
+# save data files as parquets
+walk(data_paths,fn_csv_to_pq)
+
+
+# remove csv files
+
+file.remove(here(data_paths))
+
+```
+
+
