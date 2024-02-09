@@ -1,0 +1,90 @@
+---
+title: "Absolwenci - kierunek studiów"
+author: "Łukasz Balcerzak"
+format: 
+  html:
+    code-fold: true
+    embed-resources: true
+toc: true
+toc-depth: 4
+df-print: kable
+fig-cap-location: top
+execute: 
+  warning: false
+editor_options: 
+  chunk_output_type: inline
+---
+
+
+```{r setup}
+
+library(tidyverse)
+library(readxl)
+library(here)
+library(knitr)
+library(janitor)
+library(naniar)
+
+i_am('scripts/A1_graduates_major_etl.qmd')
+
+```
+
+# Get data
+
+```{r get-data}
+
+# scope of analysis
+scope = "graduates-major"
+
+# get data from parquet and transform to tibble
+data_pq = arrow::open_dataset(here(paste0("data/raw/",scope,"-data"))) 
+data_r = 
+  as_tibble(data_pq) |>
+  filter(P_ROKDYP!="P_ROKDYP")
+
+# get dictionairy
+dict_file = list.files(here("data/raw"),".xlsx")
+dict_file = dict_file[str_detect(dict_file,scope)]
+
+dict = read_xlsx(here(paste0("data/raw/",dict_file)),
+                 trim_ws = T) |>
+  mutate(nazwazmiennej=tolower(str_sub(nazwazmiennej,3,-1)))
+
+# simple data etl
+
+df1 = data_r |>
+  relocate(P_ROKDYP,.before = everything()) |>
+  rename_with(\(x) tolower(str_sub(x,3,-1)),.cols = everything())
+  
+
+```
+
+# Demografia
+## Braki i unikalne
+```{r tbl-demography_nas}
+#| output: asis
+#| tbl-cap: Zmienne demograficzne
+
+cols_demography = c(
+  colnames(df1)[which(dict$nazwazmiennej=="rokdyp"):which(dict$nazwazmiennej=="forma")],
+  colnames(df1)[which(dict$nazwazmiennej=="kierunek_nazwa"):which(dict$nazwazmiennej=="woj")]
+)
+
+
+stats_demo = df1 |>
+  select(all_of(cols_demography))|>
+  group_by(rokdyp)|>
+  nest()|>
+  mutate(stats = map(data,\(df)
+                     df|>map(\(x) 
+                      tibble(
+                        n=length(x),
+                        unique=n_distinct(x),
+                        nulls=sum(is.na(x)))) |>
+                        list_rbind(names_to="variable")))
+
+walk2(stats_demo$rokdyp,stats_demo$stats,\(rok,st)
+      print(kable(st,caption = rok)))
+
+```
+

@@ -25,7 +25,6 @@ library(arrow)
 library(readxl)
 library(here)
 library(knitr)
-library(lubridate)
 library(janitor)
 library(curl)
 
@@ -42,7 +41,7 @@ Data downloaded from https://ela.nauka.gov.pl/pl/experts/source-data.
 
 urls = unique(
   c(
-  "https://ela.nauka.gov.pl/dataExperts/doctors/doctors-institution-general-dictionary.xlsx",
+  "https://ela.nauka.gov.pl/dataExperts/graduates/graduates-major-dictionary.xlsx",
   "https://ela.nauka.gov.pl/dataExperts/graduates/graduates-major-data.csv",
   "https://ela.nauka.gov.pl/dataExperts/graduates/graduates-institution-dictionary.xlsx",
   "https://ela.nauka.gov.pl/dataExperts/graduates/graduates-institution-data.csv",
